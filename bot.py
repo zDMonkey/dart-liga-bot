@@ -80,7 +80,7 @@ def build_tabelle(data, liga_key):
             s["legs_gewonnen"], s["legs_verloren"],
             f"{diff:+d}", s["punkte"]
         ])
-    rows.sort(key=lambda x: (-x[7], -x[6], -x[2]))
+    rows.sort(key=lambda x: (-x[8], -int(x[7].replace('+','')), -x[3]))
     for i, r in enumerate(rows):
         r.insert(0, i + 1)
     return rows
