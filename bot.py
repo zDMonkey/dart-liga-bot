@@ -9,7 +9,7 @@ from datetime import datetime
 #  KONFIGURATION
 # ─────────────────────────────────────────
 TOKEN = os.getenv("DISCORD_TOKEN", "DEIN_TOKEN_HIER")
-ERGEBNIS_KANAL = "ergebnisse"
+ERGEBNIS_KANAL = "!-ergebnisse-!"
 DATA_FILE = "liga_data.json"
 
 LIGEN = {
