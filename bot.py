@@ -83,6 +83,7 @@ tree = bot.tree
 @bot.event
 async def on_ready():
     await tree.sync()
+    await tree.sync(guild=discord.Object(id=1487163332799627408))
     print(f"✅ Bot gestartet als {bot.user}")
 
 liga_choices = [
