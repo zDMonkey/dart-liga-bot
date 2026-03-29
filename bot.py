@@ -241,24 +241,26 @@ async def reset_error(interaction: discord.Interaction, error):
 
 class ResetConfirmView(discord.ui.View):
     def __init__(self, liga_key, liga_name):
-        super().__init__(timeout=30)
+        super().__init__(timeout=60)
         self.liga_key = liga_key
         self.liga_name = liga_name
 
     @discord.ui.button(label="✅ Ja, zurücksetzen", style=discord.ButtonStyle.danger)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        data = load_data()
-        data[self.liga_key] = {}
-        data["matches"] = [m for m in data["matches"] if m["liga"] != self.liga_key]
-        save_data(data)
-        await interaction.response.edit_message(
-            embed=discord.Embed(title="✅ Reset erfolgreich",
-                description=f"**{self.liga_name}** wurde zurückgesetzt. Neue Saison kann beginnen! 🎯",
-                color=0x00cc44), view=None)
+    await interaction.response.defer()
+    data = load_data()
+    data[self.liga_key] = {}
+    data["matches"] = [m for m in data["matches"] if m["liga"] != self.liga_key]
+    save_data(data)
+    await interaction.edit_original_response(
+        embed=discord.Embed(title="✅ Reset erfolgreich",
+            description=f"**{self.liga_name}** wurde zurückgesetzt. Neue Saison kann beginnen! 🎯",
+            color=0x00cc44))
 
     @discord.ui.button(label="❌ Abbrechen", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(
-            embed=discord.Embed(title="Abgebrochen", description="Reset wurde abgebrochen.", color=0x888888), view=None)
+    await interaction.response.defer()
+    await interaction.edit_original_response(
+        embed=discord.Embed(title="Abgebrochen", description="Reset wurde abgebrochen.", color=0x888888))
 
 bot.run(TOKEN)
