@@ -64,7 +64,30 @@ def record_result(data, liga_key, spieler1, legs1, spieler2, legs2):
         "datum": datetime.now().strftime("%d.%m.%Y %H:%M")
     })
 
+def remove_result(data, liga_key, spieler1, legs1, spieler2, legs2):
+    """Macht ein eingetragenes Ergebnis rückgängig."""
+    if spieler1 not in data[liga_key] or spieler2 not in data[liga_key]:
+        return False
+    p1 = data[liga_key][spieler1]
+    p2 = data[liga_key][spieler2]
+    p1["spiele"] -= 1
+    p2["spiele"] -= 1
+    p1["legs_gewonnen"] -= legs1
+    p1["legs_verloren"] -= legs2
+    p2["legs_gewonnen"] -= legs2
+    p2["legs_verloren"] -= legs1
+    if legs1 > legs2:
+        p1["siege"] -= 1
+        p1["punkte"] -= 3
+        p2["niederlagen"] -= 1
+    else:
+        p2["siege"] -= 1
+        p2["punkte"] -= 3
+        p1["niederlagen"] -= 1
+    return True
+
 def build_tabelle(data, liga_key):
+    # Nach insert: [0]=pos [1]=name [2]=sp [3]=s [4]=n [5]=lg [6]=ll [7]=diff(int) [8]=pkt
     spieler = data[liga_key]
     if not spieler:
         return None
@@ -162,10 +185,11 @@ async def ergebnis(
         top5 = rows[:5]
         medals = ["🥇", "🥈", "🥉", "4.", "5."]
         t = "```\n"
-        t += f"{'#':<3} {'Spieler':<14} {'Sp':>3} {'S':>3} {'N':>3} {'LG':>4} {'Diff':>5} {'Pkt':>4}\n"
-        t += "─" * 45 + "\n"
+        t += f"{'#':<3} {'Spieler':<17} {'Sp':>3} {'S':>3} {'N':>3} {'LG':>4} {'Diff':>5} {'Pkt':>4}\n"
+        t += "─" * 48 + "\n"
         for i, r in enumerate(top5):
-            t += f"{medals[i]:<3} {r[1]:<14} {r[2]:>3} {r[3]:>3} {r[4]:>3} {r[5]:>4} {r[7]:>+5} {r[8]:>4}\n"
+            name = r[1][:16]
+            t += f"{medals[i]:<3} {name:<17} {r[2]:>3} {r[3]:>3} {r[4]:>3} {r[5]:>4} {r[7]:>+5} {r[8]:>4}\n"
         t += "```"
         embed.add_field(name="📊 Top 5  •  LG = Legs gewonnen", value=t, inline=False)
 
@@ -199,12 +223,13 @@ async def tabelle(interaction: discord.Interaction, liga: app_commands.Choice[st
 
     medals = ["🥇", "🥈", "🥉"]
     t = "```\n"
-    t += f"{'#':<4} {'Spieler':<14} {'Sp':>3} {'S':>3} {'N':>3} {'LG':>4} {'LL':>4} {'Diff':>5} {'Pkt':>4}\n"
-    t += "─" * 52 + "\n"
+    t += f"{'#':<4} {'Spieler':<17} {'Sp':>3} {'S':>3} {'N':>3} {'LG':>4} {'LL':>4} {'Diff':>5} {'Pkt':>4}\n"
+    t += "─" * 55 + "\n"
     for r in rows:
         pos = r[0]
         medal = medals[pos - 1] if pos <= 3 else f"{pos}.  "
-        t += f"{medal:<4} {r[1]:<14} {r[2]:>3} {r[3]:>3} {r[4]:>3} {r[5]:>4} {r[6]:>4} {r[7]:>+5} {r[8]:>4}\n"
+        name = r[1][:16]
+        t += f"{medal:<4} {name:<17} {r[2]:>3} {r[3]:>3} {r[4]:>3} {r[5]:>4} {r[6]:>4} {r[7]:>+5} {r[8]:>4}\n"
     t += "```"
 
     embed = discord.Embed(
@@ -273,6 +298,106 @@ async def stats(interaction: discord.Interaction, liga: app_commands.Choice[str]
     await interaction.response.send_message(embed=embed)
 
 # ─────────────────────────────────────────
+#  /korrektur (nur Rolle "Leiter")
+# ─────────────────────────────────────────
+
+@tree.command(name="korrektur", description="⚠️ Ergebnis korrigieren (nur Leiter)")
+@app_commands.describe(
+    liga="Welche Liga?",
+    spieler1="Spieler 1 (exakt wie eingetragen)",
+    legs1_alt="Alte Legs Spieler 1",
+    spieler2="Spieler 2 (exakt wie eingetragen)",
+    legs2_alt="Alte Legs Spieler 2",
+    legs1_neu="Neue Legs Spieler 1",
+    legs2_neu="Neue Legs Spieler 2"
+)
+@app_commands.choices(liga=liga_choices)
+@app_commands.checks.has_role("Leiter")
+async def korrektur(
+    interaction: discord.Interaction,
+    liga: app_commands.Choice[str],
+    spieler1: str,
+    legs1_alt: int,
+    spieler2: str,
+    legs2_alt: int,
+    legs1_neu: int,
+    legs2_neu: int
+):
+    liga_key = liga.value
+    liga_info = LIGEN[liga_key]
+    first_to = liga_info["first_to"]
+    spieler1 = spieler1.strip()
+    spieler2 = spieler2.strip()
+
+    # Validierung neues Ergebnis
+    if legs1_neu == legs2_neu:
+        await interaction.response.send_message("❌ Unentschieden nicht möglich.", ephemeral=True)
+        return
+    if max(legs1_neu, legs2_neu) != first_to:
+        await interaction.response.send_message(
+            f"❌ Gewinner braucht genau **{first_to} Legs**.", ephemeral=True)
+        return
+
+    data = load_data()
+
+    # Altes Ergebnis rückgängig machen
+    ok = remove_result(data, liga_key, spieler1, legs1_alt, spieler2, legs2_alt)
+    if not ok:
+        await interaction.response.send_message(
+            f"❌ Spieler nicht gefunden. Namen exakt wie eingetragen angeben.", ephemeral=True)
+        return
+
+    # Match aus Historie entfernen (letztes passendes)
+    for i in reversed(range(len(data["matches"]))):
+        m = data["matches"][i]
+        if (m["liga"] == liga_key and
+            m["spieler1"] == spieler1 and m["legs1"] == legs1_alt and
+            m["spieler2"] == spieler2 and m["legs2"] == legs2_alt):
+            data["matches"].pop(i)
+            break
+
+    # Neues Ergebnis eintragen
+    record_result(data, liga_key, spieler1, legs1_neu, spieler2, legs2_neu)
+    save_data(data)
+
+    gewinner_alt = spieler1 if legs1_alt > legs2_alt else spieler2
+    verlierer_alt = spieler2 if legs1_alt > legs2_alt else spieler1
+    gewinner_neu = spieler1 if legs1_neu > legs2_neu else spieler2
+    verlierer_neu = spieler2 if legs1_neu > legs2_neu else spieler1
+
+    embed = discord.Embed(
+        title=f"{liga_info['name']} • Korrektur",
+        color=0xff9900,
+        timestamp=datetime.now()
+    )
+    embed.add_field(
+        name="❌ Altes Ergebnis",
+        value=f"~~{gewinner_alt}  `{max(legs1_alt, legs2_alt)} – {min(legs1_alt, legs2_alt)}`  {verlierer_alt}~~",
+        inline=False
+    )
+    embed.add_field(
+        name="✅ Neues Ergebnis",
+        value=f"**{gewinner_neu}**  `{max(legs1_neu, legs2_neu)} – {min(legs1_neu, legs2_neu)}`  {verlierer_neu}",
+        inline=False
+    )
+    embed.add_field(name="📝 Korrigiert von", value=interaction.user.mention, inline=True)
+    embed.set_footer(text="Dart Liga • 501 Double Out")
+
+    kanal = discord.utils.get(interaction.guild.text_channels, name=ERGEBNIS_KANAL)
+    if kanal:
+        await kanal.send(embed=embed)
+        await interaction.response.send_message(
+            f"✅ Korrektur eingetragen und in {kanal.mention} gepostet!", ephemeral=True)
+    else:
+        await interaction.response.send_message(embed=embed)
+
+@korrektur.error
+async def korrektur_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.MissingRole):
+        await interaction.response.send_message(
+            "❌ Nur Mitglieder mit der Rolle **Leiter** können Ergebnisse korrigieren.", ephemeral=True)
+
+# ─────────────────────────────────────────
 #  /reset (nur Rolle "Leiter")
 # ─────────────────────────────────────────
 
@@ -322,7 +447,11 @@ async def reset(interaction: discord.Interaction, liga: app_commands.Choice[str]
         description=f"Alle Daten für **{liga_info['name']}** werden unwiderruflich gelöscht!\n\nBist du sicher?",
         color=0xff0000
     )
-    await interaction.response.send_message(embed=embed, view=ResetConfirmView(liga_key, liga_info["name"]), ephemeral=True)
+    await interaction.response.send_message(
+        embed=embed,
+        view=ResetConfirmView(liga_key, liga_info["name"]),
+        ephemeral=True
+    )
 
 @reset.error
 async def reset_error(interaction: discord.Interaction, error):
